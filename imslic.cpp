@@ -57,8 +57,55 @@ npy_array<float> rgb_to_lab(const npy_array<float>& rgb_image)
     return lab_image;
 }
 
+template<typename T>
+npy_array<T> pad(const npy_array<T>& array)
+{
+    npy_array<T> padded_array{{array.shape()[0] + 2, array.shape()[1] + 2, array.shape()[2]}};
+
+    for(size_t h = 0; h < array.shape()[0]; h++)
+    {
+        size_t index = h * (array.shape()[1] * array.shape()[2]);
+        size_t padded_index = (h + 1) * (padded_array.shape()[1] * padded_array.shape()[2]);
+
+        if(h == 0)
+        {
+            std::memcpy(&padded_array.data()[padded_index + 1 - (padded_array.shape()[1] * padded_array.shape()[2])], &array.data()[index], sizeof(T) * (array.shape()[1] * array.shape()[2]));
+        }
+        else if(h == array.shape()[0] - 1)
+        {
+            std::memcpy(&padded_array.data()[padded_index + 1 + (padded_array.shape()[1] * padded_array.shape()[2])], &array.data()[index], sizeof(T) * (array.shape()[1] * array.shape()[2]));
+        }
+
+        std::memcpy(&padded_array.data()[padded_index + 1], &array.data()[index], sizeof(T) * (array.shape()[1] * array.shape()[2]));    
+
+        padded_array[padded_index] = padded_array[padded_index + 1];
+        padded_array[padded_index + (padded_array.shape()[1] * padded_array.shape()[2]) - 1] = padded_array[padded_index + (padded_array.shape()[1] * padded_array.shape()[2]) - 2];
+    }
+
+    return padded_array;
+}
+
+
+npy_array<float> compute_area(const npy_array<float>& lab_image)
+{
+    npy_array<float> area{{lab_image.shape()[0], lab_image.shape()[1]}};
+
+    for(size_t h = 0; h < lab_image.shape()[0]; h++)
+    {
+        for(size_t w = 0; w < lab_image.shape()[1]; w++)
+        {
+
+        }
+    }
+
+    return area;
+}
+
 int main(int argc, char* argv[])
 {
+    const int region_size = 10;
+    const int max_iterations = 15;
+
     npy_array<uint8_t> rgb_image{"./image.npy"};
     rgb_image.save("./my_results/rgb_image.npy");
 
@@ -70,6 +117,10 @@ int main(int argc, char* argv[])
 
     npy_array<float> lab_image = std::move(rgb_to_lab(float_rgb_image));
     lab_image.save("./my_results/lab_image.npy");
+
+    {
+        npy_array<float> padded_lab_image = std::move(pad(lab_image));
+    }
 
     return EXIT_SUCCESS;
 }
