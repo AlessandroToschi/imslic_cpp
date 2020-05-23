@@ -46,6 +46,22 @@ TEST(IMSLICTest, LabImage)
     }
 }
 
+TEST(IMSLICTest, PaddedLabImage)
+{
+    npy_array<float> cv_rgb_image{"./cv_results/padded_lab_image.npy"};
+    npy_array<float> my_rgb_image{"./my_results/padded_lab_image.npy"};
+
+    EXPECT_EQ(cv_rgb_image.byte_size(), my_rgb_image.byte_size());
+    EXPECT_EQ(cv_rgb_image.size(), my_rgb_image.size());
+    EXPECT_EQ(cv_rgb_image.shape(), my_rgb_image.shape());
+
+    for(size_t i = 0; i < cv_rgb_image.size(); i++)
+    {
+        EXPECT_FLOAT_EQ(cv_rgb_image[i], my_rgb_image[i]);
+    }
+}
+
+
 int main(int argc, char* argv[])
 {
     testing::InitGoogleTest(&argc, argv);
