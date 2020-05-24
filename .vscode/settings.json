@@ -59,5 +59,6 @@
         "string": "cpp",
         "string_view": "cpp",
         "variant": "cpp"
-    }
+    },
+    "python.pythonPath": "/home/aleto/miniconda3/bin/python"
 }

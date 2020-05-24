@@ -61,6 +61,37 @@ TEST(IMSLICTest, PaddedLabImage)
     }
 }
 
+TEST(IMSLICTest, Area)
+{
+    npy_array<float> cv_rgb_image{"./cv_results/area.npy"};
+    npy_array<float> my_rgb_image{"./my_results/area.npy"};
+
+    EXPECT_EQ(cv_rgb_image.byte_size(), my_rgb_image.byte_size());
+    EXPECT_EQ(cv_rgb_image.size(), my_rgb_image.size());
+    EXPECT_EQ(cv_rgb_image.shape(), my_rgb_image.shape());
+
+    for(size_t i = 0; i < cv_rgb_image.size(); i++)
+    {
+        EXPECT_NEAR(cv_rgb_image[i], my_rgb_image[i], 10E-3f);
+    }
+}
+
+TEST(IMSLICTest, CumulativeArea)
+{
+    npy_array<float> cv_rgb_image{"./cv_results/cumulative_area.npy"};
+    npy_array<float> my_rgb_image{"./my_results/cumulative_area.npy"};
+
+    EXPECT_EQ(cv_rgb_image.byte_size(), my_rgb_image.byte_size());
+    EXPECT_EQ(cv_rgb_image.size(), my_rgb_image.size());
+    EXPECT_EQ(cv_rgb_image.shape(), my_rgb_image.shape());
+
+    for(size_t i = 0; i < cv_rgb_image.size(); i++)
+    {
+        EXPECT_NEAR(cv_rgb_image[i], my_rgb_image[i], 10E-3f);
+    }
+}
+
+
 
 int main(int argc, char* argv[])
 {

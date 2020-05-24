@@ -1,6 +1,7 @@
 #include <iostream>
 #include <math.h>
 #include <valarray>
+#include <numeric>
 
 #include "npy_array/npy_array.h"
 
@@ -110,16 +111,19 @@ npy_array<T> pad(const npy_array<T>& array)
     return padded_array;
 }
 
-std::valarray<float> get_corner(const float* lab_pixel_ptr, const std::vector<long>& offsets)
+std::valarray<float> get_corner(const float* lab_pixel_ptr, const std::vector<long>& offsets, const float x, const float y)
 {
-    std::valarray<float> corner{3};
+    std::valarray<float> corner{{0.0f, 0.0f, 0.0f, 0.0f, 0.0f}};
 
     for(int offset : offsets)
     {
-        corner[0] += *(lab_pixel_ptr + offset);
-        corner[1] += *(lab_pixel_ptr + offset + 1);
-        corner[2] += *(lab_pixel_ptr + offset + 2);
+        corner[2] += *(lab_pixel_ptr + offset);
+        corner[3] += *(lab_pixel_ptr + offset + 1);
+        corner[4] += *(lab_pixel_ptr + offset + 2);
     }
+
+    corner[0] = float(x);
+    corner[1] = float(y);
 
     corner *= 0.25f;
 
@@ -160,13 +164,13 @@ npy_array<float> compute_area(const npy_array<float>& padded_lab_image, const st
     {
         for(size_t w = 0; w < area.shape()[1]; w++)
         {
-            size_t padded_index = (h + 1) * padded_stride + 3;
+            size_t padded_index = (h + 1) * padded_stride + (3 * (w + 1));
             const float* lab_pixel_ptr = &padded_lab_image.data()[padded_index];
 
-            auto a1 = get_corner(lab_pixel_ptr, north_west_offsets);
-            auto a2 = get_corner(lab_pixel_ptr, south_west_offsets);
-            auto a3 = get_corner(lab_pixel_ptr, south_east_offsets);
-            auto a4 = get_corner(lab_pixel_ptr, north_east_offsets);
+            auto a1 = get_corner(lab_pixel_ptr, north_west_offsets, 4.0f * float(w) - 2.0f, 4.0f * float(h) - 2.0f);
+            auto a2 = get_corner(lab_pixel_ptr, south_west_offsets, 4.0f * float(w) - 2.0f, 4.0f * float(h) + 2.0f);
+            auto a3 = get_corner(lab_pixel_ptr, south_east_offsets, 4.0f * float(w) + 2.0f, 4.0f * float(h) + 2.0f);
+            auto a4 = get_corner(lab_pixel_ptr, north_east_offsets, 4.0f * float(w) + 2.0f, 4.0f * float(h) - 2.0f);
 
             auto a21 = a2 - a1;
             auto a23 = a2 - a3;
@@ -197,7 +201,12 @@ int main(int argc, char* argv[])
     npy_array<float> padded_lab_image = std::move(pad(lab_image));
     padded_lab_image.save("./my_results/padded_lab_image.npy");
 
-    compute_area(padded_lab_image, lab_image.shape());
+    npy_array<float> area = std::move(compute_area(padded_lab_image, lab_image.shape()));
+    area.save("./my_results/area.npy");
+
+    npy_array<float> cumulative_area{area.shape()};
+    std::partial_sum(area.data(), area.data() + area.size(), cumulative_area.data(), std::plus<float>());
+    cumulative_area.save("./my_results/cumulative_area.npy");
 
     return EXIT_SUCCESS;
 }
