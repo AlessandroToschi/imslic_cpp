@@ -88,6 +88,12 @@ TEST(IMSLICTest, CumulativeArea)
     for(size_t i = 0; i < cv_rgb_image.size(); i++)
     {
         EXPECT_NEAR(cv_rgb_image[i], my_rgb_image[i], 10E-3f);
+
+        if(i > 0)
+        {
+            EXPECT_GE(my_rgb_image[i], my_rgb_image[i - 1]);
+            EXPECT_GE(cv_rgb_image[i], cv_rgb_image[i - 1]);
+        }
     }
 }
 

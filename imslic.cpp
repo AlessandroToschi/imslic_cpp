@@ -10,10 +10,9 @@ npy_array<T_OUT> convert_dtype(const npy_array<T_IN>& in_array)
 {
     npy_array<T_OUT> out_array{in_array.shape()};
 
-    for(size_t i = 0; i < in_array.size(); i++)
-    {
-        out_array[i] = T_OUT(in_array[i]);
-    }
+    std::transform(in_array.data(), in_array.data() + in_array.size(), out_array.data(), [](const T_IN in){
+        return T_OUT(in);
+    });
 
     return out_array;
 }
@@ -28,8 +27,9 @@ npy_array<float> rgb_to_lab(const npy_array<float>& rgb_image)
         {
             size_t index = h * (rgb_image.shape()[1] * rgb_image.shape()[2]) + w * rgb_image.shape()[2];
 
-            const float* rgb_pixel = &(rgb_image.data()[index]);
-            float* lab_pixel = &(lab_image.data()[index]);
+            const float* rgb_pixel = &(rgb_image[{h, w, 0}]);
+            float* lab_pixel = &(lab_image[{h, w, 0}]);
+
             float scaled_rgb_pixel[3];
             float xyz_pixel[3];
             float fxfyfz_pixel[3];
@@ -164,8 +164,9 @@ npy_array<float> compute_area(const npy_array<float>& padded_lab_image, const st
     {
         for(size_t w = 0; w < area.shape()[1]; w++)
         {
-            size_t padded_index = (h + 1) * padded_stride + (3 * (w + 1));
-            const float* lab_pixel_ptr = &padded_lab_image.data()[padded_index];
+            //size_t padded_index = (h + 1) * padded_stride + (3 * (w + 1));
+            //const float* lab_pixel_ptr = &padded_lab_image.data()[padded_index];
+            const float* lab_pixel_ptr = &padded_lab_image[{h + 1, w + 1, 0}];
 
             auto a1 = get_corner(lab_pixel_ptr, north_west_offsets, 4.0f * float(w) - 2.0f, 4.0f * float(h) - 2.0f);
             auto a2 = get_corner(lab_pixel_ptr, south_west_offsets, 4.0f * float(w) - 2.0f, 4.0f * float(h) + 2.0f);
@@ -177,11 +178,49 @@ npy_array<float> compute_area(const npy_array<float>& padded_lab_image, const st
             auto a43 = a4 - a3;
             auto a41 = a4 - a1;
 
-            area[h * area.shape()[1] + w] = delta(a21, a23) + delta(a43, a41);
+            //area[h * area.shape()[1] + w] = delta(a21, a23) + delta(a43, a41);
+            area[{h, w}] = delta(a21, a23) + delta(a43, a41);
         }
     }
 
     return area;
+}
+
+npy_array<float> compute_seeds(const npy_array<float>& lab_image, const int K, const npy_array<float>& cumulative_area)
+{
+    // (y, x, l, a, b)
+    npy_array<float> seeds{{size_t(K), 5}};
+
+    const float step = (cumulative_area[cumulative_area.size() - 1] - cumulative_area[0]) / float(K - 1);
+    std::vector<float> selected_area(size_t(K), 0.0f);
+
+    for(size_t i = 0; i < selected_area.size() - 1; i++)
+    {
+        selected_area[i] = cumulative_area[0] + (i * step);
+    }
+    
+    selected_area[K - 1] = cumulative_area[cumulative_area.size() - 1];
+    
+    for(size_t i = 0, j = 0; i < selected_area.size(); i++)
+    {
+        while(j < cumulative_area.size() && cumulative_area[j] < selected_area[i])
+        {
+            j++;
+        }
+
+        const auto y = j / cumulative_area.shape()[1];
+        const auto x = j % cumulative_area.shape()[1];
+        const auto seed_index = i * seeds.shape()[1];
+        //const auto lab_index = y * (lab_image.shape()[1] * lab_image.shape()[2]) + x * lab_image.shape()[2];
+
+        seeds[seed_index] = float(y);
+        seeds[seed_index + 1] = float(x);
+        seeds[seed_index + 2] = lab_image[{y, x, 0}];
+        seeds[seed_index + 3] = lab_image[{y, x, 0}];
+        seeds[seed_index + 4] = lab_image[{y, x, 0}];
+    }
+
+    return std::move(seeds);
 }
 
 int main(int argc, char* argv[])
@@ -207,6 +246,15 @@ int main(int argc, char* argv[])
     npy_array<float> cumulative_area{area.shape()};
     std::partial_sum(area.data(), area.data() + area.size(), cumulative_area.data(), std::plus<float>());
     cumulative_area.save("./my_results/cumulative_area.npy");
+
+    npy_array<int> labels{{rgb_image.shape()[0], rgb_image.shape()[1]}};
+    std::fill(labels.data(), labels.data() + labels.size(), -1);
+
+    const int K = (rgb_image.shape()[0] * rgb_image.shape()[1]) / (region_size * region_size);
+    const float xi = cumulative_area[cumulative_area.size() - 1] * 4.0f / float(K);
+
+    npy_array<float> seeds = compute_seeds(lab_image, K, cumulative_area);
+    seeds.save("./my_results/seeds.npy");
 
     return EXIT_SUCCESS;
 }
