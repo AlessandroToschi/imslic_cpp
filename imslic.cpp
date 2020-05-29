@@ -63,49 +63,72 @@ template<typename T>
 npy_array<T> pad(const npy_array<T>& array)
 {
     npy_array<T> padded_array{{array.shape()[0] + 2, array.shape()[1] + 2, array.shape()[2]}};
-    const size_t stride = array.shape()[1] * array.shape()[2];
-    const size_t byte_stride = stride * sizeof(T);
-    const size_t padded_stride = padded_array.shape()[1] * padded_array.shape()[2];
+    const size_t byte_stride = array.shape()[1] * array.shape()[2] * sizeof(T);
 
     for(size_t h = 0; h < array.shape()[0]; h++)
     {
-        const size_t index = h * stride;
-        const size_t padded_index = (h + 1) * padded_stride;
-
         if(h == 0)
         {
-            std::memcpy(&padded_array.data()[padded_index + 3 - padded_stride], &array.data()[index], byte_stride);
+            std::memcpy(&padded_array[{h, 1, 0}], &array[{h, 0, 0}], byte_stride);
+            //std::memcpy(&padded_array.data()[padded_index + 3 - padded_stride], &array.data()[index], byte_stride);
 
-            padded_array[padded_index - padded_stride] = padded_array[padded_index + 3 - padded_stride];
-            padded_array[padded_index + 1 - padded_stride] = padded_array[padded_index + 4 - padded_stride];
-            padded_array[padded_index + 2 - padded_stride] = padded_array[padded_index + 5 - padded_stride];
+            padded_array[{h, 0, 0}] = padded_array[{h, 1, 0}];
+            padded_array[{h, 0, 1}] = padded_array[{h, 1, 1}];
+            padded_array[{h, 0, 2}] = padded_array[{h, 1, 2}];
 
-            padded_array[padded_index - 3] = padded_array[padded_index + padded_stride - 6 - padded_stride];
-            padded_array[padded_index - 2] = padded_array[padded_index + padded_stride - 5 - padded_stride];
-            padded_array[padded_index - 1] = padded_array[padded_index + padded_stride - 4 - padded_stride];
+            //padded_array[padded_index - padded_stride] = padded_array[padded_index + 3 - padded_stride];
+            //padded_array[padded_index + 1 - padded_stride] = padded_array[padded_index + 4 - padded_stride];
+            //padded_array[padded_index + 2 - padded_stride] = padded_array[padded_index + 5 - padded_stride];
+
+            padded_array[{h, padded_array.shape()[1] - 1, 0}] = padded_array[{h, padded_array.shape()[1] - 2, 0}];
+            padded_array[{h, padded_array.shape()[1] - 1, 1}] = padded_array[{h, padded_array.shape()[1] - 2, 1}];
+            padded_array[{h, padded_array.shape()[1] - 1, 2}] = padded_array[{h, padded_array.shape()[1] - 2, 2}];
+            
+
+            //padded_array[padded_index - 3] = padded_array[padded_index + padded_stride - 6 - padded_stride];
+            //padded_array[padded_index - 2] = padded_array[padded_index + padded_stride - 5 - padded_stride];
+            //padded_array[padded_index - 1] = padded_array[padded_index + padded_stride - 4 - padded_stride];
         }
         else if(h == array.shape()[0] - 1)
         {
-            std::memcpy(&padded_array.data()[padded_index + 3 + padded_stride], &array.data()[index], byte_stride);
+            std::memcpy(&padded_array[{h + 2, 1, 0}], &array[{h, 0, 0}], byte_stride);
+            //std::memcpy(&padded_array.data()[padded_index + 3 + padded_stride], &array.data()[index], byte_stride);
 
-            padded_array[padded_index + padded_stride] = padded_array[padded_index + 3 + padded_stride];
-            padded_array[padded_index + 1 + padded_stride] = padded_array[padded_index + 4 + padded_stride];
-            padded_array[padded_index + 2 + padded_stride] = padded_array[padded_index + 5 + padded_stride];
+            //padded_array[padded_index + padded_stride] = padded_array[padded_index + 3 + padded_stride];
+            //padded_array[padded_index + 1 + padded_stride] = padded_array[padded_index + 4 + padded_stride];
+            //padded_array[padded_index + 2 + padded_stride] = padded_array[padded_index + 5 + padded_stride];
 
-            padded_array[padded_index + 2 * padded_stride - 3] = padded_array[padded_index + padded_stride - 6 + padded_stride];
-            padded_array[padded_index + 2 * padded_stride - 2] = padded_array[padded_index + padded_stride - 5 + padded_stride];
-            padded_array[padded_index + 2 * padded_stride - 1] = padded_array[padded_index + padded_stride - 4 + padded_stride];
+            padded_array[{h + 2, 0, 0}] = padded_array[{h + 2, 1, 0}];
+            padded_array[{h + 2, 0, 1}] = padded_array[{h + 2, 1, 1}];
+            padded_array[{h + 2, 0, 2}] = padded_array[{h + 2, 1, 2}];
+
+            //padded_array[padded_index + 2 * padded_stride - 3] = padded_array[padded_index + padded_stride - 6 + padded_stride];
+            //padded_array[padded_index + 2 * padded_stride - 2] = padded_array[padded_index + padded_stride - 5 + padded_stride];
+            //padded_array[padded_index + 2 * padded_stride - 1] = padded_array[padded_index + padded_stride - 4 + padded_stride];
+
+            padded_array[{h + 2, padded_array.shape()[1] - 1, 0}] = padded_array[{h + 2, padded_array.shape()[1] - 2, 0}];
+            padded_array[{h + 2, padded_array.shape()[1] - 1, 1}] = padded_array[{h + 2, padded_array.shape()[1] - 2, 1}];
+            padded_array[{h + 2, padded_array.shape()[1] - 1, 2}] = padded_array[{h + 2, padded_array.shape()[1] - 2, 2}];
         }
 
-        std::memcpy(&padded_array.data()[padded_index + 3], &array.data()[index], byte_stride);    
+        //std::memcpy(&padded_array.data()[padded_index + 3], &array.data()[index], byte_stride); 
+        std::memcpy(&padded_array[{h + 1, 1, 0}], &array[{h, 0, 0}], byte_stride);   
 
-        padded_array[padded_index] = padded_array[padded_index + 3];
-        padded_array[padded_index + 1] = padded_array[padded_index + 4];
-        padded_array[padded_index + 2] = padded_array[padded_index + 5];
+        //padded_array[padded_index] = padded_array[padded_index + 3];
+        //padded_array[padded_index + 1] = padded_array[padded_index + 4];
+        //padded_array[padded_index + 2] = padded_array[padded_index + 5];
 
-        padded_array[padded_index + padded_stride - 3] = padded_array[padded_index + padded_stride - 6];
-        padded_array[padded_index + padded_stride - 2] = padded_array[padded_index + padded_stride - 5];
-        padded_array[padded_index + padded_stride - 1] = padded_array[padded_index + padded_stride - 4];
+        padded_array[{h + 1, 0, 0}] = padded_array[{h + 1, 1, 0}];
+        padded_array[{h + 1, 0, 1}] = padded_array[{h + 1, 1, 1}];
+        padded_array[{h + 1, 0, 2}] = padded_array[{h + 1, 1, 2}];
+
+        //padded_array[padded_index + padded_stride - 3] = padded_array[padded_index + padded_stride - 6];
+        //padded_array[padded_index + padded_stride - 2] = padded_array[padded_index + padded_stride - 5];
+        //padded_array[padded_index + padded_stride - 1] = padded_array[padded_index + padded_stride - 4];
+
+        padded_array[{h + 1, padded_array.shape()[1] - 1, 0}] = padded_array[{h + 1, padded_array.shape()[1] - 2, 0}];
+        padded_array[{h + 1, padded_array.shape()[1] - 1, 1}] = padded_array[{h + 1, padded_array.shape()[1] - 2, 1}];
+        padded_array[{h + 1, padded_array.shape()[1] - 1, 2}] = padded_array[{h + 1, padded_array.shape()[1] - 2, 2}];
     }
 
     return padded_array;
@@ -216,8 +239,8 @@ npy_array<float> compute_seeds(const npy_array<float>& lab_image, const int K, c
         seeds[seed_index] = float(y);
         seeds[seed_index + 1] = float(x);
         seeds[seed_index + 2] = lab_image[{y, x, 0}];
-        seeds[seed_index + 3] = lab_image[{y, x, 0}];
-        seeds[seed_index + 4] = lab_image[{y, x, 0}];
+        seeds[seed_index + 3] = lab_image[{y, x, 1}];
+        seeds[seed_index + 4] = lab_image[{y, x, 2}];
     }
 
     return std::move(seeds);
