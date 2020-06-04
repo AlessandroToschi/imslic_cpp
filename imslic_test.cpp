@@ -97,7 +97,31 @@ TEST(IMSLICTest, CumulativeArea)
     }
 }
 
+TEST(IMSLICTest, Seeds)
+{
+    npy_array<float> lab_image{"./my_results/lab_image.npy"};
+    npy_array<float> seeds{"./my_results/seeds.npy"};
 
+    for(size_t seed_index = 0; seed_index < seeds.shape()[0] - 1; seed_index++)
+    {
+        const size_t current_index = size_t(seeds[{seed_index, 0}]) * lab_image.shape()[1] + size_t(seeds[{seed_index, 1}]);
+        const size_t next_index = size_t(seeds[{seed_index + 1, 0}]) * lab_image.shape()[1] + size_t(seeds[{seed_index + 1, 1}]);
+        EXPECT_LT(current_index, next_index);
+    }
+
+    for(size_t seed_index = 0; seed_index != seeds.shape()[0]; seed_index++)
+    {
+        const size_t y = size_t(seeds[{seed_index, 0}]);
+        const size_t x = size_t(seeds[{seed_index, 1}]);
+        const float* seed_pixel = &seeds[{seed_index, 2}];
+        const float* lab_pixel = &lab_image[{y, x, 0}];
+
+        for(size_t i = 0; i != 3; i++)
+        {
+            EXPECT_EQ(seed_pixel[i], lab_pixel[i]);
+        }
+    }
+}
 
 int main(int argc, char* argv[])
 {

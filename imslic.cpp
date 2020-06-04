@@ -2,6 +2,7 @@
 #include <math.h>
 #include <valarray>
 #include <numeric>
+#include <chrono>
 
 #include "npy_array/npy_array.h"
 
@@ -70,61 +71,33 @@ npy_array<T> pad(const npy_array<T>& array)
         if(h == 0)
         {
             std::memcpy(&padded_array[{h, 1, 0}], &array[{h, 0, 0}], byte_stride);
-            //std::memcpy(&padded_array.data()[padded_index + 3 - padded_stride], &array.data()[index], byte_stride);
 
             padded_array[{h, 0, 0}] = padded_array[{h, 1, 0}];
             padded_array[{h, 0, 1}] = padded_array[{h, 1, 1}];
             padded_array[{h, 0, 2}] = padded_array[{h, 1, 2}];
 
-            //padded_array[padded_index - padded_stride] = padded_array[padded_index + 3 - padded_stride];
-            //padded_array[padded_index + 1 - padded_stride] = padded_array[padded_index + 4 - padded_stride];
-            //padded_array[padded_index + 2 - padded_stride] = padded_array[padded_index + 5 - padded_stride];
-
             padded_array[{h, padded_array.shape()[1] - 1, 0}] = padded_array[{h, padded_array.shape()[1] - 2, 0}];
             padded_array[{h, padded_array.shape()[1] - 1, 1}] = padded_array[{h, padded_array.shape()[1] - 2, 1}];
             padded_array[{h, padded_array.shape()[1] - 1, 2}] = padded_array[{h, padded_array.shape()[1] - 2, 2}];
-            
-
-            //padded_array[padded_index - 3] = padded_array[padded_index + padded_stride - 6 - padded_stride];
-            //padded_array[padded_index - 2] = padded_array[padded_index + padded_stride - 5 - padded_stride];
-            //padded_array[padded_index - 1] = padded_array[padded_index + padded_stride - 4 - padded_stride];
         }
         else if(h == array.shape()[0] - 1)
         {
             std::memcpy(&padded_array[{h + 2, 1, 0}], &array[{h, 0, 0}], byte_stride);
-            //std::memcpy(&padded_array.data()[padded_index + 3 + padded_stride], &array.data()[index], byte_stride);
-
-            //padded_array[padded_index + padded_stride] = padded_array[padded_index + 3 + padded_stride];
-            //padded_array[padded_index + 1 + padded_stride] = padded_array[padded_index + 4 + padded_stride];
-            //padded_array[padded_index + 2 + padded_stride] = padded_array[padded_index + 5 + padded_stride];
 
             padded_array[{h + 2, 0, 0}] = padded_array[{h + 2, 1, 0}];
             padded_array[{h + 2, 0, 1}] = padded_array[{h + 2, 1, 1}];
             padded_array[{h + 2, 0, 2}] = padded_array[{h + 2, 1, 2}];
-
-            //padded_array[padded_index + 2 * padded_stride - 3] = padded_array[padded_index + padded_stride - 6 + padded_stride];
-            //padded_array[padded_index + 2 * padded_stride - 2] = padded_array[padded_index + padded_stride - 5 + padded_stride];
-            //padded_array[padded_index + 2 * padded_stride - 1] = padded_array[padded_index + padded_stride - 4 + padded_stride];
 
             padded_array[{h + 2, padded_array.shape()[1] - 1, 0}] = padded_array[{h + 2, padded_array.shape()[1] - 2, 0}];
             padded_array[{h + 2, padded_array.shape()[1] - 1, 1}] = padded_array[{h + 2, padded_array.shape()[1] - 2, 1}];
             padded_array[{h + 2, padded_array.shape()[1] - 1, 2}] = padded_array[{h + 2, padded_array.shape()[1] - 2, 2}];
         }
 
-        //std::memcpy(&padded_array.data()[padded_index + 3], &array.data()[index], byte_stride); 
         std::memcpy(&padded_array[{h + 1, 1, 0}], &array[{h, 0, 0}], byte_stride);   
-
-        //padded_array[padded_index] = padded_array[padded_index + 3];
-        //padded_array[padded_index + 1] = padded_array[padded_index + 4];
-        //padded_array[padded_index + 2] = padded_array[padded_index + 5];
 
         padded_array[{h + 1, 0, 0}] = padded_array[{h + 1, 1, 0}];
         padded_array[{h + 1, 0, 1}] = padded_array[{h + 1, 1, 1}];
         padded_array[{h + 1, 0, 2}] = padded_array[{h + 1, 1, 2}];
-
-        //padded_array[padded_index + padded_stride - 3] = padded_array[padded_index + padded_stride - 6];
-        //padded_array[padded_index + padded_stride - 2] = padded_array[padded_index + padded_stride - 5];
-        //padded_array[padded_index + padded_stride - 1] = padded_array[padded_index + padded_stride - 4];
 
         padded_array[{h + 1, padded_array.shape()[1] - 1, 0}] = padded_array[{h + 1, padded_array.shape()[1] - 2, 0}];
         padded_array[{h + 1, padded_array.shape()[1] - 1, 1}] = padded_array[{h + 1, padded_array.shape()[1] - 2, 1}];
@@ -187,8 +160,6 @@ npy_array<float> compute_area(const npy_array<float>& padded_lab_image, const st
     {
         for(size_t w = 0; w < area.shape()[1]; w++)
         {
-            //size_t padded_index = (h + 1) * padded_stride + (3 * (w + 1));
-            //const float* lab_pixel_ptr = &padded_lab_image.data()[padded_index];
             const float* lab_pixel_ptr = &padded_lab_image[{h + 1, w + 1, 0}];
 
             auto a1 = get_corner(lab_pixel_ptr, north_west_offsets, 4.0f * float(w) - 2.0f, 4.0f * float(h) - 2.0f);
@@ -201,7 +172,6 @@ npy_array<float> compute_area(const npy_array<float>& padded_lab_image, const st
             auto a43 = a4 - a3;
             auto a41 = a4 - a1;
 
-            //area[h * area.shape()[1] + w] = delta(a21, a23) + delta(a43, a41);
             area[{h, w}] = delta(a21, a23) + delta(a43, a41);
         }
     }
@@ -234,7 +204,6 @@ npy_array<float> compute_seeds(const npy_array<float>& lab_image, const int K, c
         const auto y = j / cumulative_area.shape()[1];
         const auto x = j % cumulative_area.shape()[1];
         const auto seed_index = i * seeds.shape()[1];
-        //const auto lab_index = y * (lab_image.shape()[1] * lab_image.shape()[2]) + x * lab_image.shape()[2];
 
         seeds[seed_index] = float(y);
         seeds[seed_index + 1] = float(x);
@@ -243,7 +212,30 @@ npy_array<float> compute_seeds(const npy_array<float>& lab_image, const int K, c
         seeds[seed_index + 4] = lab_image[{y, x, 2}];
     }
 
-    return std::move(seeds);
+    return seeds;
+}
+
+float compute_lambda(const float seed_index[2], npy_array<float>& area, const float xi, const int region_size)
+{
+    const int seed_y = int(seed_index[0]);
+    const int seed_x = int(seed_index[1]);
+
+    const int x_min = std::max(int(0), seed_x - region_size);
+    const int x_max = std::min(int(area.shape()[1]), seed_x + region_size);
+    const int y_min = std::max(int(0), seed_y - region_size);
+    const int y_max = std::min(int(area.shape()[0]), seed_y + region_size);
+
+    float sub_area = 0.0;
+
+    for(int y = y_min; y <= y_max; y++)
+    {
+        const size_t start_index = y * area.shape()[1] + x_min;
+        const size_t end_index = start_index + (x_max - x_min);
+
+        sub_area += std::accumulate(&area[start_index], &area[end_index], 0.0f);
+    }
+
+    return std::sqrt(xi / sub_area);
 }
 
 int main(int argc, char* argv[])
@@ -270,14 +262,42 @@ int main(int argc, char* argv[])
     std::partial_sum(area.data(), area.data() + area.size(), cumulative_area.data(), std::plus<float>());
     cumulative_area.save("./my_results/cumulative_area.npy");
 
-    npy_array<int> labels{{rgb_image.shape()[0], rgb_image.shape()[1]}};
-    std::fill(labels.data(), labels.data() + labels.size(), -1);
-
     const int K = (rgb_image.shape()[0] * rgb_image.shape()[1]) / (region_size * region_size);
     const float xi = cumulative_area[cumulative_area.size() - 1] * 4.0f / float(K);
 
     npy_array<float> seeds = compute_seeds(lab_image, K, cumulative_area);
     seeds.save("./my_results/seeds.npy");
+
+    npy_array<int> labels{{rgb_image.shape()[0], rgb_image.shape()[1]}};
+    npy_array<float> global_distances{labels.shape()};
+
+    for(int iteration = 0; iteration != max_iterations; iteration++)
+    {
+        const auto iteration_start_time = std::chrono::high_resolution_clock::now();
+
+        std::fill(global_distances.begin(), global_distances.end(), std::numeric_limits<float>::max());
+        std::fill(labels.begin(), labels.end(), -1);
+
+        for(auto k = 0; k != K; k++)
+        {
+            const float *seed_index = &seeds[{size_t(K), 0}];
+            const int y = int(seed_index[0]);
+            const int x = int(seed_index[1]);
+
+            const float lambda = compute_lambda(seed_index, area, xi, region_size);
+            const int offset = lambda * region_size;
+
+            const int x_min = std::min(0, x - offset);
+            const int x_max = std::max(int(area.shape()[1]) - 1, x + offset);
+            const int y_min = std::min(0, y - offset);
+            const int y_max = std::max(int(area.shape()[0]) - 1, y + offset);
+        }
+
+        const auto iteration_end_time = std::chrono::high_resolution_clock::now();
+        const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(iteration_end_time - iteration_start_time);
+        
+        std::cout << "Iteration time: " << microseconds.count() << " microseconds." << std::endl;
+    }
 
     return EXIT_SUCCESS;
 }
