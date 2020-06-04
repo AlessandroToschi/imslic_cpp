@@ -101,13 +101,41 @@ TEST(IMSLICTest, Seeds)
 {
     npy_array<float> lab_image{"./my_results/lab_image.npy"};
     npy_array<float> seeds{"./my_results/seeds.npy"};
+    npy_array<double> cv_seeds{"./cv_results/seeds.npy"};
+
+    EXPECT_EQ(cv_seeds.size(), seeds.size());
+
+    int different_seeds = 0;
 
     for(size_t seed_index = 0; seed_index < seeds.shape()[0] - 1; seed_index++)
     {
         const size_t current_index = size_t(seeds[{seed_index, 0}]) * lab_image.shape()[1] + size_t(seeds[{seed_index, 1}]);
         const size_t next_index = size_t(seeds[{seed_index + 1, 0}]) * lab_image.shape()[1] + size_t(seeds[{seed_index + 1, 1}]);
         EXPECT_LT(current_index, next_index);
+
+        const float y = seeds[{seed_index, 0}];
+        const float x = seeds[{seed_index, 1}];
+
+        bool found = false;
+
+        for(size_t i = 0; i < cv_seeds.shape()[1] && !found; i++)
+        {
+            double cv_x = cv_seeds[{0, i}];
+            double cv_y = cv_seeds[{1, i}];
+
+            if(cv_x == x && cv_y == y)
+            {
+                found = true;
+            }
+        }
+
+        if(!found)
+        {
+            different_seeds++;
+        }
     }
+
+    std::cout << different_seeds << std::endl;
 
     for(size_t seed_index = 0; seed_index != seeds.shape()[0]; seed_index++)
     {

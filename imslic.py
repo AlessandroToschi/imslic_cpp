@@ -237,13 +237,14 @@ def get_corner(lab_image, width, height, x, y, dx, dy):
     nx = x
     ny = y
     for i in range(len(dx)):
-        l += lab_image[y + dy[i], x + dx[i], 0]
-        a += lab_image[y + dy[i], x + dx[i], 1]
-        b += lab_image[y + dy[i], x + dx[i], 2]
-        counter += 1
+        if x + dx[i]>= 0 and x + dx[i] < width and y + dy[i] >= 0 and y + dy[i] < height:
+            l += lab_image[y + dy[i], x + dx[i], 0]
+            a += lab_image[y + dy[i], x + dx[i], 1]
+            b += lab_image[y + dy[i], x + dx[i], 2]
+            counter += 1
         nx += x + dx[i]
         ny += y + dy[i]
-    return np.array([nx / 4.0, ny / 4.0, l / 4.0, a / 4.0, b / 4.0])
+    return np.array([nx / 4.0, ny / 4.0, l / counter, a / counter, b / counter])
 
 def compute_row_areas(index, lab_image, width, height):
     row_areas = np.zeros(width)
@@ -281,7 +282,7 @@ def main():
     region_size = 10.0
     max_iterations = 15
 
-    bgr_image = cv2.imread("./6.jpg")
+    bgr_image = cv2.imread("./1.jpg")
     lab_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2Lab).astype("float32")
 
     height = lab_image.shape[0]
@@ -308,6 +309,7 @@ def main():
     print("Computed the cumulative area for each pixel.")
 
     seeds = compute_seeds2(lab_image, width, height, K, cumulative_areas)
+    np.save("./cv_results/seeds.npy", seeds)
 
     print("Computed the seeds and perturbed.")
 
@@ -370,4 +372,5 @@ def test_cumulative_area():
 
 if __name__ == "__main__":
     #test_area()
-    test_cumulative_area()
+    #test_cumulative_area()
+    main()
