@@ -305,69 +305,6 @@ npy_array<float> shortest_path(const int x_min, const int x_max, const int y_min
             }
         }
     }
-    /*
-    const int start = (seed_y - y_min) * lab_image.shape()[1] + (seed_x - x_min);
-    const size_t elements = (x_max - x_min + 1) * (y_max - y_min + 1);
-    npy_array<float> D{{size_t(elements)}};
-    npy_array<int> V{{size_t(elements)}};
-
-    std::fill(D.begin(), D.end(), std::numeric_limits<float>::max());
-    std::fill(V.begin(), V.end(), 0);
-
-    D[start] = 0.0f;
-
-    std::cout << elements << std::endl;
-    for(size_t i = 0; i != elements - 1; i++)
-    {
-        int min_index = -1;
-        float min_value = std::numeric_limits<float>::max();
-
-        for(size_t j = 0; j != elements; j++)
-        {
-            if(V[j] == 0 && D[j] < min_value)
-            {
-                min_value = D[j];
-                min_index = j;
-            }
-        }
-
-        V[min_index] = 1;
-
-        const int y = (min_index / elements) + y_min;
-        const int x = (min_index % elements) + x_min;
-
-        //std::cout << y << ", " << y_min << ", " << y_max << std::endl;
-
-        
-
-        for(int dx = -1; dx <= 1; dx++)
-        {
-            for(int dy = -1; dy <= 1; dy++)
-            {
-                if(x_min <= x + dx && x + dx < x_max && y_min <= y + dy && y + dy < y_max)
-                {
-                    const float* current_pixel = &lab_image[{size_t(y), size_t(x), 0}];
-                    const float* next_pixel = &lab_image[{size_t(y + dy), size_t(x + dx), 0}];
-                    const int next_index = (y + dy - y_min) * elements + (x + dx - x_min);
-
-                    std::cout << "C: (" << y << ", " << x << ") - N: (" << y + dy << ", " << x + dx << ")" << std::endl;
-
-                    const float d = D[min_index] + std::sqrt(
-                        std::pow(current_pixel[0] - next_pixel[0], 2.0f) + 
-                        std::pow(current_pixel[1] - next_pixel[1], 2.0f) + 
-                        std::pow(current_pixel[2] - next_pixel[2], 2.0f)
-                    );
-
-                    if(!V[next_index] && D[min_index] != std::numeric_limits<float>::max() && d < D[next_index])
-                    {
-                        D[next_index] = d;
-                    }
-                }
-            }
-        }
-        
-    }
-    */
     return D;
 }
 
@@ -384,6 +321,46 @@ std::vector<std::pair<int, int>> find_orphanes(const npy_array<int>& labels)
     }
 
     return orphanes;
+}    
+    
+void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<int>& labels)
+{
+    std::pair<size_t, size_t> starting_index{0, 0};
+    std::pair<size_t, size_t> ending_index{0, 0};
+    long min_index = std::numeric_limits<long>::max();
+    long max_index = std::numeric_limits<long>::min();
+
+    for(size_t y = 0; y != lab_image.shape()[0]; y++)
+    {
+        for(size_t x = 0; x != lab_image.shape()[1]; x++)
+        {
+            if(labels[{y, x}] == k)
+            {
+                const size_t index = sub2ind(x, y, labels.shape()[1]);
+
+                if(index < min_index)
+                {
+                    min_index = index;
+
+                    starting_index.first = y;
+                    starting_index.second = x;
+                }
+
+                if(index > max_index)
+                {
+                    max_index = index;
+
+                    ending_index.first = y;
+                    ending_index.second = x;
+                }
+            }
+        }
+    }
+
+    const size_t dx = ending_index.second - starting_index.second + 1;
+    const size_t dy = ending_index.first - starting_index.first + 1;
+
+    std::cout << ((dx * dy) * (dx * dy) * 4) / (1 << 20) << std::endl;
 }
 
 int main(int argc, char* argv[])
@@ -458,6 +435,43 @@ int main(int argc, char* argv[])
         }
 
         const auto orphanes = std::move(find_orphanes(labels));
+
+        for(auto i = 0; i != orphanes.size(); i++)
+        {
+            const auto& xy_orphan = orphanes[i];
+            float min_distance = std::numeric_limits<float>::max();
+            const float* orphan_pixel = &lab_image[{size_t(xy_orphan.first), size_t(xy_orphan.second), 0}];
+            
+            for(auto dy = -1; dy <= 1; dy++)
+            {
+                for(auto dx = -1; dx <= 1; dx++)
+                {
+                    const std::pair<size_t, size_t> neighbor{size_t(xy_orphan.first + dy), size_t(xy_orphan.second + dx)};
+
+                    if(0 <= neighbor.second && neighbor.second < lab_image.shape()[1] && 0 <= neighbor.first && neighbor.first < lab_image.shape()[0] && labels[{neighbor.first, neighbor.first}] != -1)
+                    {
+                        const float* neighbor_pixel = &lab_image[{neighbor.first, neighbor.second, 0}];
+
+                        const float distance = global_distances[{neighbor.first, neighbor.second}] + std::sqrt(
+                            std::pow(orphan_pixel[0] - neighbor_pixel[0], 2.0f) + 
+                            std::pow(orphan_pixel[1] - neighbor_pixel[1], 2.0f) + 
+                            std::pow(orphan_pixel[2] - neighbor_pixel[2], 2.0f)
+                        );
+
+                        if(distance < min_distance)
+                        {
+                            min_distance = distance;
+                            labels[{size_t(xy_orphan.first), size_t(xy_orphan.second)}] = labels[{neighbor.first, neighbor.second}];
+                        }
+                    }
+                }
+            }
+        }
+
+        for(int k = 0; k != K; k++)
+        {
+            move_seed(k, lab_image, labels);
+        }
 
         const auto iteration_end_time = std::chrono::high_resolution_clock::now();
         const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(iteration_end_time - iteration_start_time);
