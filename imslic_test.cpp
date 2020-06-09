@@ -73,6 +73,7 @@ TEST(IMSLICTest, Area)
     for(size_t i = 0; i < cv_rgb_image.size(); i++)
     {
         EXPECT_NEAR(cv_rgb_image[i], my_rgb_image[i], 10E-3f);
+        EXPECT_GE(my_rgb_image[i], 0.0f);
     }
 }
 
@@ -135,7 +136,7 @@ TEST(IMSLICTest, Seeds)
         }
     }
 
-    std::cout << different_seeds << std::endl;
+    //std::cout << different_seeds << std::endl;
 
     for(size_t seed_index = 0; seed_index != seeds.shape()[0]; seed_index++)
     {

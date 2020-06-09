@@ -221,9 +221,9 @@ float compute_lambda(const float seed_index[2], npy_array<float>& area, const fl
     const int seed_x = int(seed_index[1]);
 
     const int x_min = std::max(int(0), seed_x - region_size);
-    const int x_max = std::min(int(area.shape()[1]), seed_x + region_size);
+    const int x_max = std::min(int(area.shape()[1]) - 1, seed_x + region_size);
     const int y_min = std::max(int(0), seed_y - region_size);
-    const int y_max = std::min(int(area.shape()[0]), seed_y + region_size);
+    const int y_max = std::min(int(area.shape()[0]) - 1, seed_y + region_size);
 
     float sub_area = 0.0;
 
@@ -236,6 +236,154 @@ float compute_lambda(const float seed_index[2], npy_array<float>& area, const fl
     }
 
     return std::sqrt(xi / sub_area);
+}
+
+inline int sub2ind(const int x, const int y, const int w)
+{
+    return y * w + x;
+}
+
+inline std::pair<int, int> ind2sub(const int index, const int w)
+{
+    return std::pair<int, int>{index / w, index % w};
+}
+
+npy_array<float> shortest_path(const int x_min, const int x_max, const int y_min, const int y_max, const int seed_x, const int seed_y, const npy_array<float>& lab_image)
+{
+    const float float_max = std::numeric_limits<float>::max();
+    const int region_width = x_max - x_min + 1;
+    const int region_height = y_max - y_min + 1;
+    const int elements = region_width * region_height;
+
+    npy_array<float> D{{size_t(elements)}};
+    npy_array<int> V{{size_t(elements)}};
+
+    std::fill(D.begin(), D.end(), float_max);
+    std::fill(V.begin(), V.end(), 0);
+    
+    D[sub2ind(seed_x - x_min, seed_y - y_min, region_width)] = 0.0f;
+
+    for(auto i = 0; i != elements - 1; i++)
+    {
+        int min_index = -1;
+        float min_distance = float_max;
+
+        for(auto j = 0; j != elements; j++)
+        {
+            if(V[j] == 0 && D[j] < min_distance)
+            {
+                min_distance = D[j];
+                min_index = j;
+            }
+        }
+
+        V[min_index] = 1;
+
+        const auto xy_relative = ind2sub(min_index, region_width);
+        const float* current_pixel = &lab_image[{size_t(y_min + xy_relative.first), size_t(x_min + xy_relative.first)}];
+
+        for(auto dx = -1; dx <= 1; dx++)
+        {
+            for(auto dy = -1; dy <= 1; dy++)
+            {
+                if(0 <= xy_relative.second + dx && xy_relative.second + dx < region_width && 0 <= xy_relative.first + dy && xy_relative.first + dy < region_height)
+                {
+                    const float* next_pixel = &lab_image[{size_t(y_min + xy_relative.first + dy), size_t(x_min + xy_relative.first + dx)}];
+                    const int next_index = sub2ind(xy_relative.second + dx, xy_relative.first + dy, region_width);
+
+                    const float distance = std::sqrt(
+                        std::pow(current_pixel[0] - next_pixel[0], 2.0f) + 
+                        std::pow(current_pixel[1] - next_pixel[1], 2.0f) + 
+                        std::pow(current_pixel[2] - next_pixel[2], 2.0f)
+                    );
+
+                    if(V[next_index] == 0 && D[min_index] != float_max && D[min_index] + distance < D[next_index])
+                    {
+                        D[next_index] = D[min_index] + distance;
+                    }
+                }
+            }
+        }
+    }
+    /*
+    const int start = (seed_y - y_min) * lab_image.shape()[1] + (seed_x - x_min);
+    const size_t elements = (x_max - x_min + 1) * (y_max - y_min + 1);
+    npy_array<float> D{{size_t(elements)}};
+    npy_array<int> V{{size_t(elements)}};
+
+    std::fill(D.begin(), D.end(), std::numeric_limits<float>::max());
+    std::fill(V.begin(), V.end(), 0);
+
+    D[start] = 0.0f;
+
+    std::cout << elements << std::endl;
+    for(size_t i = 0; i != elements - 1; i++)
+    {
+        int min_index = -1;
+        float min_value = std::numeric_limits<float>::max();
+
+        for(size_t j = 0; j != elements; j++)
+        {
+            if(V[j] == 0 && D[j] < min_value)
+            {
+                min_value = D[j];
+                min_index = j;
+            }
+        }
+
+        V[min_index] = 1;
+
+        const int y = (min_index / elements) + y_min;
+        const int x = (min_index % elements) + x_min;
+
+        //std::cout << y << ", " << y_min << ", " << y_max << std::endl;
+
+        
+
+        for(int dx = -1; dx <= 1; dx++)
+        {
+            for(int dy = -1; dy <= 1; dy++)
+            {
+                if(x_min <= x + dx && x + dx < x_max && y_min <= y + dy && y + dy < y_max)
+                {
+                    const float* current_pixel = &lab_image[{size_t(y), size_t(x), 0}];
+                    const float* next_pixel = &lab_image[{size_t(y + dy), size_t(x + dx), 0}];
+                    const int next_index = (y + dy - y_min) * elements + (x + dx - x_min);
+
+                    std::cout << "C: (" << y << ", " << x << ") - N: (" << y + dy << ", " << x + dx << ")" << std::endl;
+
+                    const float d = D[min_index] + std::sqrt(
+                        std::pow(current_pixel[0] - next_pixel[0], 2.0f) + 
+                        std::pow(current_pixel[1] - next_pixel[1], 2.0f) + 
+                        std::pow(current_pixel[2] - next_pixel[2], 2.0f)
+                    );
+
+                    if(!V[next_index] && D[min_index] != std::numeric_limits<float>::max() && d < D[next_index])
+                    {
+                        D[next_index] = d;
+                    }
+                }
+            }
+        }
+        
+    }
+    */
+    return D;
+}
+
+std::vector<std::pair<int, int>> find_orphanes(const npy_array<int>& labels)
+{
+    std::vector<std::pair<int, int>> orphanes{};
+
+    for(auto i = 0; i != labels.size(); i++)
+    {
+        if(labels[i] == -1)
+        {
+            orphanes.push_back(ind2sub(i, labels.shape()[1]));
+        }
+    }
+
+    return orphanes;
 }
 
 int main(int argc, char* argv[])
@@ -280,23 +428,41 @@ int main(int argc, char* argv[])
 
         for(auto k = 0; k != K; k++)
         {
-            const float *seed_index = &seeds[{size_t(K), 0}];
+            const float *seed_index = &seeds[{size_t(k), 0}];
             const int y = int(seed_index[0]);
             const int x = int(seed_index[1]);
 
             const float lambda = compute_lambda(seed_index, area, xi, region_size);
             const int offset = lambda * region_size;
 
-            const int x_min = std::min(0, x - offset);
-            const int x_max = std::max(int(area.shape()[1]) - 1, x + offset);
-            const int y_min = std::min(0, y - offset);
-            const int y_max = std::max(int(area.shape()[0]) - 1, y + offset);
+            const int x_min = std::max(0, x - offset);
+            const int x_max = std::min(int(area.shape()[1]) - 1, x + offset);
+            const int y_min = std::max(0, y - offset);
+            const int y_max = std::min(int(area.shape()[0]) - 1, y + offset);
+            const int region_width = x_max - x_min + 1;
+
+            npy_array<float> region_distances = std::move(shortest_path(x_min, x_max, y_min, y_max, x, y, lab_image));
+
+            for(auto i = 0; i != region_distances.size(); i++)
+            {
+                auto xy_relative = ind2sub(i, region_width);
+                const size_t y_absolute = xy_relative.first + y_min;
+                const size_t x_absolute = xy_relative.second + x_min;
+
+                if(global_distances[{y_absolute, x_absolute}] > region_distances[i])
+                {
+                    global_distances[{y_absolute, x_absolute}] = region_distances[i];
+                    labels[{y_absolute, x_absolute}] = k;
+                }
+            }
         }
 
+        const auto orphanes = std::move(find_orphanes(labels));
+
         const auto iteration_end_time = std::chrono::high_resolution_clock::now();
-        const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(iteration_end_time - iteration_start_time);
+        const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(iteration_end_time - iteration_start_time);
         
-        std::cout << "Iteration time: " << microseconds.count() << " microseconds." << std::endl;
+        std::cout << "Iteration time: " << milliseconds.count() << " ms." << std::endl;
     }
 
     return EXIT_SUCCESS;
