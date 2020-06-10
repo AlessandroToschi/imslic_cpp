@@ -1,6 +1,6 @@
 SHELL=/bin/bash
 CWD := $(shell pwd)
-CXXFLAGS := -g -pg -std=c++11 -Wall -Wpedantic
+CXXFLAGS := -g -pg -O3 -march=native -std=c++11 -Wall -Wpedantic
 INCLUDES := -I $(CWD)/npy_array/include -I $(CWD)/npy_array/src/
 LIBS := -L $(CWD)/npy_array/lib -lnpy_array -L /usr/local/lib -lboost_regex
 

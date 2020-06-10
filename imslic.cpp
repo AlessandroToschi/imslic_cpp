@@ -3,6 +3,7 @@
 #include <valarray>
 #include <numeric>
 #include <chrono>
+#include <unordered_map>
 
 #include "npy_array/npy_array.h"
 
@@ -322,9 +323,19 @@ std::vector<std::pair<int, int>> find_orphanes(const npy_array<int>& labels)
 
     return orphanes;
 }    
+
+struct pair_hash
+{
+    template<typename T1, typename T2>
+    size_t operator()(const std::pair<T1, T2>& pair) const
+    {
+        return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
+    }
+};
     
 void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<int>& labels)
 {
+    std::unordered_map<std::pair<size_t, size_t>, float, pair_hash> distances;
     std::pair<size_t, size_t> starting_index{0, 0};
     std::pair<size_t, size_t> ending_index{0, 0};
     long min_index = std::numeric_limits<long>::max();
@@ -336,7 +347,7 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
         {
             if(labels[{y, x}] == k)
             {
-                const size_t index = sub2ind(x, y, labels.shape()[1]);
+                const long index = sub2ind(x, y, labels.shape()[1]);
 
                 if(index < min_index)
                 {
@@ -357,25 +368,143 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
         }
     }
 
-    const size_t dx = ending_index.second - starting_index.second + 1;
-    const size_t dy = ending_index.first - starting_index.first + 1;
+    
+    const size_t region_width = ending_index.second - starting_index.second + 1;
+    const size_t region_height = ending_index.first - starting_index.first + 1;
+    const size_t elements = region_width * region_height;
+    const float float_max = std::numeric_limits<float>::max();
+    //std::cout << (elements * elements * sizeof(float)) / size_t(1 << 20) << " MB" << std::endl;
+    
 
-    std::cout << ((dx * dy) * (dx * dy) * 4) / (1 << 20) << std::endl;
+    for(auto y = starting_index.first; y <= ending_index.first; y++)
+    {
+        for(auto x = starting_index.second; x <= ending_index.second; x++)
+        {
+            const int current_index = sub2ind(x, y, lab_image.shape()[1]);
+            const float* current_pixel =  &lab_image[{y, x, 0}];
+
+            for(auto dy = 0; dy <= 1; dy++)
+            {
+                for(auto dx = 0; dx <= 1; dx++)
+                {
+                    if(0 <= x + dx && x + dx < lab_image.shape()[1] && 0 <= y + dy && y + dy < lab_image.shape()[0] && !(dx == 0 && dy == 0))
+                    {
+                        const int neighbor_index = sub2ind(x + dx, y + dy, lab_image.shape()[1]);
+                        const float* neighbor_pixel = &lab_image[{y + dy, x + dx, 0}];
+
+                        const float distance = std::sqrt(
+                            std::pow(current_pixel[0] - neighbor_pixel[0], 2.0f) + 
+                            std::pow(current_pixel[1] - neighbor_pixel[1], 2.0f) + 
+                            std::pow(current_pixel[2] - neighbor_pixel[2], 2.0f)
+                        );
+
+                        distances[std::make_pair(current_index, neighbor_index)] = distance;
+                    }
+                }
+            }
+        }
+    }
+
+    long min_local_index = std::numeric_limits<long>::max();
+    float min_local_distance = float_max;
+
+    for(size_t i = 0; i != elements; i++)
+    {
+        auto local_ind = ind2sub(i, region_width);
+        auto global_pos = std::make_pair(local_ind.first + starting_index.first, local_ind.second + starting_index.second);
+
+        if(labels[{global_pos.first, global_pos.second}] != k)
+        {
+            continue;
+        }
+
+        npy_array<float> D{{size_t(elements)}};
+        npy_array<int> V{{size_t(elements)}};
+
+        std::fill(D.begin(), D.end(), float_max);
+        std::fill(V.begin(), V.end(), 0);
+
+        D[i] = 0.0f;
+
+        for(auto i = 0; i != elements - 1; i++)
+        {
+            int min_index = -1;
+            float min_distance = float_max;
+
+            for(auto j = 0; j != elements; j++)
+            {
+                if(V[j] == 0 && D[j] < min_distance)
+                {
+                    min_distance = D[j];
+                    min_index = j;
+                }
+            }
+
+            V[min_index] = 1;
+
+            const auto xy_relative = ind2sub(min_index, region_width);
+            const int current_index = sub2ind(xy_relative.second + int(starting_index.second), xy_relative.first + int(starting_index.first), lab_image.shape()[1]);
+            //const float* current_pixel = &lab_image[{size_t(y_min + xy_relative.first), size_t(x_min + xy_relative.first)}];
+
+            for(auto dx = -1; dx <= 1; dx++)
+            {
+                for(auto dy = -1; dy <= 1; dy++)
+                {
+                    if(0 <= xy_relative.second + dx && xy_relative.second + dx < region_width && 0 <= xy_relative.first + dy && xy_relative.first + dy < region_height)
+                    {
+                        const int local_neighbor_index = sub2ind(xy_relative.second + dx, xy_relative.first + dy, region_width);
+                        const int neighbor_index = sub2ind(xy_relative.second + dx + int(starting_index.second), xy_relative.first + dy + int(starting_index.first), lab_image.shape()[1]);
+                        float distance = 0.0f;
+
+                        if(distances.find(std::make_pair(current_index, neighbor_index)) != distances.end())
+                        {
+                            distance = distances[std::make_pair(current_index, neighbor_index)];
+                        }
+                        else if(distances.find(std::make_pair(neighbor_index, current_index)) != distances.end())
+                        {
+                            distance = distances[std::make_pair(neighbor_index, current_index)];
+                        }
+
+                        if(V[local_neighbor_index] == 0 && D[min_index] != float_max && D[min_index] + distance < D[local_neighbor_index])
+                        {
+                            D[local_neighbor_index] = D[min_index] + distance;
+                        }
+                    }
+                }
+            }
+        }
+    
+        float distance = std::accumulate(D.begin(), D.end(), 0.0f);
+
+        if(distance < min_local_distance)
+        {
+            min_local_distance = distance;
+            min_local_index = i;
+        }
+    }
+
+    std::cout << "K: " << k << " d: " << min_local_distance << " i: " << min_local_index << std::endl;
 }
 
 int main(int argc, char* argv[])
 {
     const int region_size = 10;
-    const int max_iterations = 15;
+    const int max_iterations = 1;
 
     npy_array<uint8_t> rgb_image{"./image.npy"};
     rgb_image.save("./my_results/rgb_image.npy");
 
+    std::cout << "Loaded the RGB image with shape (" << rgb_image.shape()[0] << ", " << rgb_image.shape()[1] << ", " << rgb_image.shape()[2] << ")" << std::endl;
+
     npy_array<float> float_rgb_image = std::move(convert_dtype<uint8_t, float>(rgb_image));
     float_rgb_image.save("./my_results/float_rgb_image.npy");
 
+    std::cout << "Converted the RGB image from uint8_t to float32." << std::endl;
+
     npy_array<float> lab_image = std::move(rgb_to_lab(float_rgb_image));
     lab_image.save("./my_results/lab_image.npy");
+
+    std::cout << "Converted the image from the RGB color space to the Lab color space." << std::endl;
 
     npy_array<float> padded_lab_image = std::move(pad(lab_image));
     padded_lab_image.save("./my_results/padded_lab_image.npy");
@@ -387,11 +516,15 @@ int main(int argc, char* argv[])
     std::partial_sum(area.data(), area.data() + area.size(), cumulative_area.data(), std::plus<float>());
     cumulative_area.save("./my_results/cumulative_area.npy");
 
+    std::cout << "Computed the area of the Lab image." << std::endl;
+
     const int K = (rgb_image.shape()[0] * rgb_image.shape()[1]) / (region_size * region_size);
     const float xi = cumulative_area[cumulative_area.size() - 1] * 4.0f / float(K);
 
     npy_array<float> seeds = compute_seeds(lab_image, K, cumulative_area);
     seeds.save("./my_results/seeds.npy");
+
+    std::cout << "Computed the " << K << " seeds." << std::endl;
 
     npy_array<int> labels{{rgb_image.shape()[0], rgb_image.shape()[1]}};
     npy_array<float> global_distances{labels.shape()};
@@ -399,6 +532,8 @@ int main(int argc, char* argv[])
     for(int iteration = 0; iteration != max_iterations; iteration++)
     {
         const auto iteration_start_time = std::chrono::high_resolution_clock::now();
+
+        std::cout << "Iteration " << iteration + 1 << std::endl;
 
         std::fill(global_distances.begin(), global_distances.end(), std::numeric_limits<float>::max());
         std::fill(labels.begin(), labels.end(), -1);
@@ -434,6 +569,8 @@ int main(int argc, char* argv[])
             }
         }
 
+        std::cout << "Computed distances." << std::endl;
+
         const auto orphanes = std::move(find_orphanes(labels));
 
         for(auto i = 0; i != orphanes.size(); i++)
@@ -468,15 +605,19 @@ int main(int argc, char* argv[])
             }
         }
 
+        std::cout << "Orphanes assigned." << std::endl;
+
         for(int k = 0; k != K; k++)
         {
             move_seed(k, lab_image, labels);
         }
 
+        std::cout << "Seeds recentered." << std::endl;
+
         const auto iteration_end_time = std::chrono::high_resolution_clock::now();
         const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(iteration_end_time - iteration_start_time);
         
-        std::cout << "Iteration time: " << milliseconds.count() << " ms." << std::endl;
+        std::cout << "Iteration " << iteration + 1 << " time: " << milliseconds.count() << " ms." << std::endl;
     }
 
     return EXIT_SUCCESS;
