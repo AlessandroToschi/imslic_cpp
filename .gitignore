@@ -2,3 +2,7 @@ gmon.out
 imslic
 imslic_test
 .vscode/c_cpp_properties.json
+out.asm
+out.txt
+parallel_imslic
+prof.txt

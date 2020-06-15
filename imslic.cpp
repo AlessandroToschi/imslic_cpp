@@ -333,13 +333,19 @@ struct pair_hash
     }
 };
     
-void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<int>& labels)
+void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<int>& labels, npy_array<float>& seeds)
 {
     std::unordered_map<std::pair<size_t, size_t>, float, pair_hash> distances;
-    std::pair<size_t, size_t> starting_index{0, 0};
-    std::pair<size_t, size_t> ending_index{0, 0};
+    /*
+    std::pair<long, long> starting_index{0, 0};
+    std::pair<long, long> ending_index{0, 0};
     long min_index = std::numeric_limits<long>::max();
     long max_index = std::numeric_limits<long>::min();
+    */
+   size_t x_min = std::numeric_limits<size_t>::max();
+   size_t x_max = 0UL;
+   size_t y_min = std::numeric_limits<size_t>::max();
+   size_t y_max = 0UL;
 
     for(size_t y = 0; y != lab_image.shape()[0]; y++)
     {
@@ -347,38 +353,29 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
         {
             if(labels[{y, x}] == k)
             {
-                const long index = sub2ind(x, y, labels.shape()[1]);
+                if(x <= x_min) x_min = x;
 
-                if(index < min_index)
-                {
-                    min_index = index;
+                if(x >= x_max) x_max = x;
 
-                    starting_index.first = y;
-                    starting_index.second = x;
-                }
+                if(y <= y_min) y_min = y;
 
-                if(index > max_index)
-                {
-                    max_index = index;
-
-                    ending_index.first = y;
-                    ending_index.second = x;
-                }
+                if(y >= y_max) y_max = y;
             }
         }
     }
 
     
-    const size_t region_width = ending_index.second - starting_index.second + 1;
-    const size_t region_height = ending_index.first - starting_index.first + 1;
+    const size_t region_width = x_max - x_min + 1;
+    const size_t region_height = y_max - y_min + 1;
     const size_t elements = region_width * region_height;
     const float float_max = std::numeric_limits<float>::max();
+    std::cout << "K: " << k << " (" << region_height << ", " << region_width << ", " << elements << ")" << std::endl;
     //std::cout << (elements * elements * sizeof(float)) / size_t(1 << 20) << " MB" << std::endl;
     
-
-    for(auto y = starting_index.first; y <= ending_index.first; y++)
+    
+    for(auto y = y_min; y <= y_max; y++)
     {
-        for(auto x = starting_index.second; x <= ending_index.second; x++)
+        for(auto x = x_min; x <= x_max; x++)
         {
             const int current_index = sub2ind(x, y, lab_image.shape()[1]);
             const float* current_pixel =  &lab_image[{y, x, 0}];
@@ -404,6 +401,7 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
             }
         }
     }
+    
 
     long min_local_index = std::numeric_limits<long>::max();
     float min_local_distance = float_max;
@@ -411,7 +409,7 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
     for(size_t i = 0; i != elements; i++)
     {
         auto local_ind = ind2sub(i, region_width);
-        auto global_pos = std::make_pair(local_ind.first + starting_index.first, local_ind.second + starting_index.second);
+        auto global_pos = std::make_pair(local_ind.first + y_min, local_ind.second + x_min);
 
         if(labels[{global_pos.first, global_pos.second}] != k)
         {
@@ -443,7 +441,7 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
             V[min_index] = 1;
 
             const auto xy_relative = ind2sub(min_index, region_width);
-            const int current_index = sub2ind(xy_relative.second + int(starting_index.second), xy_relative.first + int(starting_index.first), lab_image.shape()[1]);
+            const int current_index = sub2ind(xy_relative.second + int(x_min), xy_relative.first + int(y_min), lab_image.shape()[1]);
             //const float* current_pixel = &lab_image[{size_t(y_min + xy_relative.first), size_t(x_min + xy_relative.first)}];
 
             for(auto dx = -1; dx <= 1; dx++)
@@ -453,7 +451,7 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
                     if(0 <= xy_relative.second + dx && xy_relative.second + dx < region_width && 0 <= xy_relative.first + dy && xy_relative.first + dy < region_height)
                     {
                         const int local_neighbor_index = sub2ind(xy_relative.second + dx, xy_relative.first + dy, region_width);
-                        const int neighbor_index = sub2ind(xy_relative.second + dx + int(starting_index.second), xy_relative.first + dy + int(starting_index.first), lab_image.shape()[1]);
+                        const int neighbor_index = sub2ind(xy_relative.second + dx + int(x_min), xy_relative.first + dy + int(y_min), lab_image.shape()[1]);
                         float distance = 0.0f;
 
                         if(distances.find(std::make_pair(current_index, neighbor_index)) != distances.end())
@@ -484,6 +482,13 @@ void move_seed(const int k, const npy_array<float>& lab_image, const npy_array<i
     }
 
     std::cout << "K: " << k << " d: " << min_local_distance << " i: " << min_local_index << std::endl;
+
+    auto new_k = ind2sub(min_local_index, region_width);
+    seeds[{size_t(k), 0}] = float(new_k.first);
+    seeds[{size_t(k), 1}] = float(new_k.second);
+    seeds[{size_t(k), 2}] = lab_image[{size_t(new_k.first), size_t(new_k.second), 0}];
+    seeds[{size_t(k), 3}] = lab_image[{size_t(new_k.first), size_t(new_k.second), 1}];
+    seeds[{size_t(k), 4}] = lab_image[{size_t(new_k.first), size_t(new_k.second), 2}];
 }
 
 int main(int argc, char* argv[])
@@ -609,7 +614,7 @@ int main(int argc, char* argv[])
 
         for(int k = 0; k != K; k++)
         {
-            move_seed(k, lab_image, labels);
+            move_seed(k, lab_image, labels, seeds);
         }
 
         std::cout << "Seeds recentered." << std::endl;
