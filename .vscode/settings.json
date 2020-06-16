@@ -58,7 +58,14 @@
         "set": "cpp",
         "string": "cpp",
         "string_view": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "condition_variable": "cpp",
+        "future": "cpp",
+        "mutex": "cpp"
     },
-    "python.pythonPath": "/home/aleto/miniconda3/bin/python"
+    "python.pythonPath": "/home/aleto/miniconda3/bin/python",
+    "C_Cpp.experimentalFeatures": "Enabled",
+    "C_Cpp.workspaceSymbols": "All",
+    "C_Cpp.default.cppStandard": "c++11",
+    "C_Cpp.default.intelliSenseMode": "gcc-x64"
 }
