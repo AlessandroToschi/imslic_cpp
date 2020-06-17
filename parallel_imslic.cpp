@@ -1,8 +1,36 @@
 #include <iostream>
 #include <future>
 #include <cassert>
+#include <valarray>
+#include <chrono>
 
 #include "npy_array/npy_array.h"
+
+std::launch policy = std::launch::deferred | std::launch::async;
+
+class timer
+{
+    typedef std::chrono::high_resolution_clock::time_point time_point;
+
+public:
+    timer() : _start{}, _end{} {}
+    void start()
+    {
+        _start = std::chrono::high_resolution_clock::now();
+    }
+
+    void stop_and_print()
+    {
+        _end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(_end - _start);
+        
+        std::cout << "Duration: " << duration.count() << " ms" << std::endl;
+    }
+
+private:
+    time_point _start;
+    time_point _end;
+};
 
 template<typename T>
 inline T sub2ind(const T x, const T y, const T w)
@@ -66,7 +94,7 @@ npy_array<float> rgb_to_lab(const npy_array<uint8_t>& rgb_image)
 
     for(auto y = 0UL; y != rgb_image.shape()[0]; y++)
     {
-        futures.push_back(std::async(std::launch::async | std::launch::deferred, parallel_rgb_to_lab, rgb_start, rgb_end, lab_start));
+        futures.push_back(std::async(policy, parallel_rgb_to_lab, rgb_start, rgb_end, lab_start));
         rgb_start = rgb_end;
         rgb_end += stride;
         lab_start += stride;
@@ -80,47 +108,109 @@ npy_array<float> rgb_to_lab(const npy_array<uint8_t>& rgb_image)
     return std::move(lab_image);
 }
 
-void parallel_area(const npy_array<float>& lab_image, const size_t x_start, const size_t x_end, const size_t y_start, const size_t y_end)
+float delta(const std::valarray<float>& x, const std::valarray<float>& y)
 {
-    const auto width = x_end - x_start;
-    const auto height = y_end - y_start;
+    auto dot_product = (x * y).sum();
+    auto x_norm = std::sqrt(std::pow(x, 2.0f).sum());
+    auto y_norm = std::sqrt(std::pow(y, 2.0f).sum());
+    auto angle = std::sqrt(1.0f - std::pow(dot_product / (x_norm * y_norm), 2.0f));
+    return 0.5f * x_norm * y_norm * angle;
+}
 
-    /*
-    const std::array<std::pair<long, long>, 4> aaa = {
-        std::make_pair<0L, 0L>, std::make_pair<1L, 1L>, std::make_pair<2L, 2L>, std::make_pair<3L, 3L>
-    };
-    */
-    //float sub_lab_image[(width + 2) * (height + 2) * lab_image.shape()[2]];
-    /*
-    const std::array<std::array<std::pair<long, long>, 4>, 4> offsets = {
-        {{0L, -1L}, {-1L, -1L}, {-1L, 0L}, {0L, 0L}},
-        {{0L, 0L}, {-1L, 0L}, {-1L, 1L}, {0L, 1L}},
-        {{0L, 0L}, {0L, 1L}, {1L, 1L}, {1L, 0L}},
-        {{0L, 0L}, {1L, 0L}, {1L, -1L}, {0L, -1L}}
-    };
-    */
+void parallel_areaaaaaaaa(const npy_array<float>& lab_image, npy_array<float>& area, const size_t x_start, const size_t x_end, const size_t y_start, const size_t y_end)
+{
+    std::valarray<float> a1(0.0f, 5), a2(0.0f, 5), a3(0.0f, 5), a4(0.0f, 5);
+
     for(auto y = y_start; y != y_end; y++)
     {
         for(auto x = x_start; x != x_end; x++)
         {
-            float neighbors[27];
+            const float* lab_pixel = &lab_image[{y, x, 0}];
 
+            a1 = {float(x), float(y), lab_pixel[0], lab_pixel[1], lab_pixel[2]};
+            a2 = a1;
+            a3 = a1;
+            a4 = a1;
+            
             for(auto dy = -1L; dy <= 1L; dy++)
             {
                 for(auto dx = -1L; dx <= 1L; dx++)
                 {
+                    if(dx == 0 && dy == 0) continue;
+
                     const long neighbor_x = long(x) + dx;
                     const long neighbor_y = long(y) + dy;
-                    const auto between_boundaries = check_boundaries(0L, lab_image.shape()[1], neighbor_x) && check_boundaries(0L, lab_image.shape()[0], neighbor_y);
-                    //const auto index = sub2ind(1L + dx, 1L + dx, 9L)
-                    //neighbors[index] = check_boundaries(0L, x + dx, lab_image.shape()[1]) && check_boundaries(0L, y + dy, lab_image.shape()[0]) ? 
+                    const auto between_boundaries = check_boundaries(0L, long(lab_image.shape()[1]), neighbor_x) && check_boundaries(0L, long(lab_image.shape()[0]), neighbor_y);
+
+                    std::valarray<float> neighbor{{float(neighbor_x), float(neighbor_y), 0.0f, 0.0f, 0.0f}};
+
+                    if(between_boundaries)
+                    {
+                        const float* neighbor_pixel = &lab_image[{size_t(neighbor_y), size_t(neighbor_x), 0}];
+
+                        neighbor[2] = neighbor_pixel[0];
+                        neighbor[3] = neighbor_pixel[1];
+                        neighbor[4] = neighbor_pixel[2];
+                    }
+                    else
+                    {
+                        neighbor[2] = lab_pixel[0];
+                        neighbor[3] = lab_pixel[1];
+                        neighbor[4] = lab_pixel[2];
+                    }
+                    
+                    if(dx == -1)
+                    {
+                        if(dy == -1) a1 += neighbor;
+                        else if(dy == 1) a2 += neighbor;
+                        else 
+                        {
+                            a1 += neighbor; a2 += neighbor;
+                        }
+                    }
+                    else if(dx == 0)
+                    {
+                        if(dy == -1) 
+                        {
+                            a1 += neighbor; a4 += neighbor;
+                        }
+                        else if(dy == 1) 
+                        {
+                            a2 += neighbor; a3 += neighbor;
+                        }
+                        else 
+                        {
+                            a1 += neighbor; a2 += neighbor; a3 += neighbor; a4 += neighbor;
+                        }
+                    }
+                    else
+                    {
+                        if(dy == -1) a4 += neighbor;
+                        else if(dy == 1) a3 += neighbor;
+                        else 
+                        {
+                            a4 += neighbor; a3 += neighbor;
+                        }
+                    }
                 }
             }
+        
+            a1 *= 0.25f;
+            a2 *= 0.25f;
+            a3 *= 0.25f;
+            a4 *= 0.25f;
+
+            auto a21 = a2 - a1;
+            auto a23 = a2 - a3;
+            auto a43 = a4 - a3;
+            auto a41 = a4 - a1;
+
+            area[{y, x}] = delta(a21, a23) + delta(a43, a41);
         }
     }
 }
 
-npy_array<float> compute_area(const npy_array<float>& lab_image)
+npy_array<float> compute_areaaaaaaaaa(const npy_array<float>& lab_image)
 {
     const size_t block_size = 10;
     npy_array<float> area{{lab_image.shape()[0], lab_image.shape()[1]}};
@@ -140,18 +230,132 @@ npy_array<float> compute_area(const npy_array<float>& lab_image)
         {
             const auto x_start = x * block_size;
             const auto x_end = std::min(lab_image.shape()[1], (x + 1) * block_size);
-
+            /*
             futures.push_back(std::async(
-                std::launch::async | std::launch::deferred,
+                policy,
                 parallel_area,
-                std::ref(lab_image), x_start, x_end, y_start, y_end
+                std::ref(lab_image), std::ref(area), x_start, x_end, y_start, y_end
             ));
-
-
-            //std::cout << "(" << y_start << ", " << y_end << ") - (" << x_start << ", " << x_end << ")" << std::endl;
-            //futures.push_back(std::async(std::launch::async | std::launch::deferred, ))
-
+            */
         }
+    }
+
+    for(auto& future : futures)
+    {
+        future.get();
+    }
+
+    return std::move(area);
+}
+
+
+void parallel_area(const float* lab_start, const float* lab_end, const float* previous, const float* next, float* area_start)
+{
+    std::valarray<float> a1(0.0f, 5), a2(0.0f, 5), a3(0.0f, 5), a4(0.0f, 5);
+
+    for(auto x = lab_start, p = previous, n = next; x != lab_end; x +=3, p += 3, n += 3, area_start += 1)
+    {
+        a1[2] = x[0];
+        a1[3] = x[1];
+        a1[4] = x[2];
+
+        a2 = a1;
+        a3 = a1;
+        a4 = a1;
+
+        a1[2] += x == lab_start ? previous[0] : *(previous - 3);
+        a1[3] += x == lab_start ? previous[1] : *(previous - 2);
+        a1[4] += x == lab_start ? previous[2] : *(previous - 1);
+
+        a1[2] += previous[0];
+        a1[3] += previous[1];
+        a1[4] += previous[2];
+
+        a4[2] += previous[0];
+        a4[3] += previous[1];
+        a4[4] += previous[2];
+
+        a4[2] += x == lab_end - 3 ? previous[0] : previous[3];
+        a4[3] += x == lab_end - 3 ? previous[1] : previous[4];
+        a4[4] += x == lab_end - 3 ? previous[2] : previous[5];
+
+        a1[2] += x == lab_start ? x[0] : *(x - 3); 
+        a1[3] += x == lab_start ? x[1] : *(x - 2); 
+        a1[4] += x == lab_start ? x[2] : *(x - 1); 
+
+        a2[2] += x == lab_start ? x[0] : *(x - 3); 
+        a2[3] += x == lab_start ? x[1] : *(x - 2); 
+        a2[4] += x == lab_start ? x[2] : *(x - 1); 
+
+        a4[2] += x == lab_end - 3 ? x[0] : *(x + 3);
+        a4[3] += x == lab_end - 3 ? x[1] : *(x + 2);
+        a4[4] += x == lab_end - 3 ? x[2] : *(x + 1);
+
+        a3[2] += x == lab_end - 3 ? x[0] : *(x + 3);
+        a3[3] += x == lab_end - 3 ? x[1] : *(x + 2);
+        a3[4] += x == lab_end - 3 ? x[2] : *(x + 1);
+
+        a2[2] += x == lab_start ? next[0] : *(next - 3);
+        a2[3] += x == lab_start ? next[1] : *(next - 2);
+        a2[4] += x == lab_start ? next[2] : *(next - 1);
+
+        a2[2] += next[0];
+        a2[3] += next[1];
+        a2[4] += next[2];
+
+        a3[2] += next[0];
+        a3[3] += next[1];
+        a3[4] += next[2];
+
+        a3[2] += x == lab_end - 3 ? next[0] : *(next + 3);
+        a3[3] += x == lab_end - 3 ? next[1] : *(next + 4);
+        a3[4] += x == lab_end - 3 ? next[2] : *(next + 5);
+
+        a1 *= 0.25f;
+        a2 *= 0.25f;
+        a3 *= 0.25f;
+        a4 *= 0.25f;
+
+        auto a21 = a2 - a1;
+        auto a23 = a2 - a3;
+        auto a43 = a4 - a3;
+        auto a41 = a4 - a1;
+
+        *area_start = delta(a21, a23) + delta(a43, a41);
+    }   
+}
+
+npy_array<float> compute_area(const npy_array<float>& lab_image)
+{
+    npy_array<float> area{{lab_image.shape()[0], lab_image.shape()[1]}};
+
+    std::vector<std::future<void>> futures{};
+    futures.reserve(lab_image.shape()[0]);
+
+    const auto area_stride = lab_image.shape()[1];
+    const auto stride = lab_image.shape()[1] * lab_image.shape()[2];
+    auto lab_start = lab_image.begin();
+    auto lab_end = lab_start + stride;
+    auto previous = lab_start;
+    auto next = lab_end;
+    auto area_start = area.begin();
+
+    for(auto y = 0UL; y != lab_image.shape()[0]; y++)
+    {
+        futures.push_back(std::async(
+            policy,
+            parallel_area,
+            lab_start, lab_end, previous, next, area_start
+        ));
+
+        previous = lab_start;
+        lab_start = lab_end;
+        lab_end += stride;
+        
+        if(y == lab_image.shape()[0] - 1) next = lab_start;
+        else next = lab_end;
+
+        next += area_stride;
     }
 
     for(auto& future : futures)
@@ -164,9 +368,19 @@ npy_array<float> compute_area(const npy_array<float>& lab_image)
 
 int main(int argc, char* argv[])
 {
-    npy_array<uint8_t> rgb_image{"./image.npy"};
+    timer profiler{};
+
+    profiler.start();
+    npy_array<uint8_t> rgb_image{"./4k.npy"};
+    profiler.stop_and_print();
+
+    profiler.start();
     npy_array<float> lab_image = rgb_to_lab(rgb_image);
+    profiler.stop_and_print();
+
+    profiler.start();
     npy_array<float> area = compute_area(lab_image);
+    profiler.stop_and_print();
 
     return EXIT_SUCCESS;
 }
