@@ -496,7 +496,7 @@ int main(int argc, char* argv[])
     const int region_size = 10;
     const int max_iterations = 1;
 
-    npy_array<uint8_t> rgb_image{"./image.npy"};
+    npy_array<uint8_t> rgb_image{"./4k.npy"};
     rgb_image.save("./my_results/rgb_image.npy");
 
     std::cout << "Loaded the RGB image with shape (" << rgb_image.shape()[0] << ", " << rgb_image.shape()[1] << ", " << rgb_image.shape()[2] << ")" << std::endl;
