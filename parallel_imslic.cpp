@@ -6,7 +6,7 @@
 
 #include "npy_array/npy_array.h"
 
-std::launch policy = std::launch::deferred | std::launch::async;
+std::launch policy = std::launch::deferred;
 
 class timer
 {
@@ -19,17 +19,24 @@ public:
         _start = std::chrono::high_resolution_clock::now();
     }
 
-    void stop_and_print()
+    void stop_and_print(const std::string& message="")
     {
         _end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(_end - _start);
         
-        std::cout << "Duration: " << duration.count() << " ms" << std::endl;
+        std::cout << message << " Duration: " << duration.count() << " ms" << std::endl;
     }
 
 private:
     time_point _start;
     time_point _end;
+};
+
+struct region_distances
+{
+    std::vector<std::pair<size_t, size_t>> coords;
+    std::unique_ptr<npy_array<float>> distances;
+    size_t k;
 };
 
 template<typename T>
@@ -94,7 +101,12 @@ npy_array<float> rgb_to_lab(const npy_array<uint8_t>& rgb_image)
 
     for(auto y = 0UL; y != rgb_image.shape()[0]; y++)
     {
-        futures.push_back(std::async(policy, parallel_rgb_to_lab, rgb_start, rgb_end, lab_start));
+        futures.push_back(std::async(
+            policy, 
+            parallel_rgb_to_lab, 
+            rgb_start, rgb_end, lab_start
+        ));
+
         rgb_start = rgb_end;
         rgb_end += stride;
         lab_start += stride;
@@ -117,12 +129,16 @@ float delta(const std::valarray<float>& x, const std::valarray<float>& y)
     return 0.5f * x_norm * y_norm * angle;
 }
 
-void parallel_area(const float* lab_start, const float* lab_end, const float* previous, const float* next, float* area_start)
+void parallel_area(const float* lab_start, const float* lab_end, const float* previous, const float* next, float* area_start, const size_t y)
 {
     std::valarray<float> a1(0.0f, 5), a2(0.0f, 5), a3(0.0f, 5), a4(0.0f, 5);
 
-    for(auto x = lab_start, p = previous, n = next; x != lab_end; x +=3, p += 3, n += 3, area_start += 1)
+    size_t xx = 0;
+
+    for(auto x = lab_start, p = previous, n = next; x != lab_end; x +=3, p += 3, n += 3, area_start += 1, xx++)
     {
+        a1[0] = 4.0f * float(y) - 2.0f;
+        a1[1] = 4.0f * float(xx) - 2.0f;
         a1[2] = x[0];
         a1[3] = x[1];
         a1[4] = x[2];
@@ -130,6 +146,15 @@ void parallel_area(const float* lab_start, const float* lab_end, const float* pr
         a2 = a1;
         a3 = a1;
         a4 = a1;
+
+        a2[0] = 4.0f * float(y) + 2.0f;
+        a2[1] = 4.0f * float(xx) - 2.0f;
+
+        a3[0] = 4.0f * float(y) + 2.0f;
+        a3[1] = 4.0f * float(xx) + 2.0f;
+
+        a4[0] = 4.0f * float(y) - 2.0f;
+        a4[1] = 4.0f * float(xx) + 2.0f;
 
         a1[2] += x == lab_start ? previous[0] : *(previous - 3);
         a1[3] += x == lab_start ? previous[1] : *(previous - 2);
@@ -189,7 +214,14 @@ void parallel_area(const float* lab_start, const float* lab_end, const float* pr
         auto a43 = a4 - a3;
         auto a41 = a4 - a1;
 
-        *area_start = delta(a21, a23) + delta(a43, a41);
+        float d = delta(a21, a23) + delta(a43, a41);
+        
+        if(std::isnan(d))
+        {
+            std::cout << "ciao" << std::endl;
+        }
+
+        *area_start = d;
     }   
 }
 
@@ -213,17 +245,14 @@ npy_array<float> compute_area(const npy_array<float>& lab_image)
         futures.push_back(std::async(
             policy,
             parallel_area,
-            lab_start, lab_end, previous, next, area_start
+            lab_start, lab_end, previous, next, area_start, y
         ));
 
         previous = lab_start;
         lab_start = lab_end;
         lab_end += stride;
-        
-        if(y == lab_image.shape()[0] - 1) next = lab_start;
-        else next = lab_end;
 
-        next += area_stride;
+        area_start += area_stride;
     }
 
     for(auto& future : futures)
@@ -234,13 +263,13 @@ npy_array<float> compute_area(const npy_array<float>& lab_image)
     return std::move(area);
 }
 
-npy_array<float> compute_seeds(const npy_array<float>& lab_image, const int K, const npy_array<float>& cumulative_area)
+npy_array<float> compute_seeds(const npy_array<float>& lab_image, const size_t K, const npy_array<float>& cumulative_area)
 {
     // (y, x, l, a, b)
-    npy_array<float> seeds{{size_t(K), 5}};
+    npy_array<float> seeds{{K, 5}};
 
     const float step = (cumulative_area[cumulative_area.size() - 1] - cumulative_area[0]) / float(K - 1);
-    std::vector<float> selected_area(size_t(K), 0.0f);
+    std::vector<float> selected_area(K, 0.0f);
 
     for(size_t i = 0; i < selected_area.size() - 1; i++)
     {
@@ -269,36 +298,222 @@ npy_array<float> compute_seeds(const npy_array<float>& lab_image, const int K, c
     return std::move(seeds);
 }
 
+float compute_lambda(const float* seed_index, const npy_array<float>& area, const float xi, const size_t region_size)
+{
+    const size_t seed_y = size_t(seed_index[0]);
+    const size_t seed_x = size_t(seed_index[1]);
+
+    const size_t x_min = size_t(std::max(0L, long(seed_x) - long(region_size)));
+    const size_t x_max = std::min(area.shape()[1] - 1UL, seed_x + region_size);
+    const size_t y_min = size_t(std::max(0L, long(seed_y) - long(region_size)));
+    const size_t y_max = std::min(area.shape()[0] - 1UL, seed_y + region_size);
+
+    float sub_area = 0.0;
+
+    for(size_t y = y_min; y <= y_max; y++)
+    {
+        const size_t start_index = sub2ind(x_min, y, area.shape()[1]);
+        const size_t end_index = start_index + (x_max - x_min);
+
+        sub_area += std::accumulate(&area[start_index], &area[end_index], 0.0f);
+    }
+
+    return std::sqrt(xi / sub_area);
+}
+
+npy_array<float> shortest_path(const int x_min, const int x_max, const int y_min, const int y_max, const int seed_x, const int seed_y, const npy_array<float>& lab_image)
+{
+    const float float_max = std::numeric_limits<float>::max();
+    const int region_width = x_max - x_min + 1;
+    const int region_height = y_max - y_min + 1;
+    const int elements = region_width * region_height;
+
+    npy_array<float> D{{size_t(elements)}};
+    npy_array<int> V{{size_t(elements)}};
+
+    std::fill(D.begin(), D.end(), float_max);
+    std::fill(V.begin(), V.end(), 0);
+    
+    D[sub2ind(seed_x - x_min, seed_y - y_min, region_width)] = 0.0f;
+
+    for(auto i = 0; i != elements - 1; i++)
+    {
+        int min_index = -1;
+        float min_distance = float_max;
+
+        for(auto j = 0; j != elements; j++)
+        {
+            if(V[j] == 0 && D[j] < min_distance)
+            {
+                min_distance = D[j];
+                min_index = j;
+            }
+        }
+
+        V[min_index] = 1;
+
+        const auto xy_relative = ind2sub(min_index, region_width);
+        const float* current_pixel = &lab_image[{size_t(y_min + xy_relative.first), size_t(x_min + xy_relative.first)}];
+
+        for(auto dx = -1; dx <= 1; dx++)
+        {
+            for(auto dy = -1; dy <= 1; dy++)
+            {
+                if(0 <= xy_relative.second + dx && xy_relative.second + dx < region_width && 0 <= xy_relative.first + dy && xy_relative.first + dy < region_height)
+                {
+                    const float* next_pixel = &lab_image[{size_t(y_min + xy_relative.first + dy), size_t(x_min + xy_relative.first + dx)}];
+                    const int next_index = sub2ind(xy_relative.second + dx, xy_relative.first + dy, region_width);
+
+                    const float distance = std::sqrt(
+                        std::pow(current_pixel[0] - next_pixel[0], 2.0f) + 
+                        std::pow(current_pixel[1] - next_pixel[1], 2.0f) + 
+                        std::pow(current_pixel[2] - next_pixel[2], 2.0f)
+                    );
+
+                    if(V[next_index] == 0 && D[min_index] != float_max && D[min_index] + distance < D[next_index])
+                    {
+                        D[next_index] = D[min_index] + distance;
+                    }
+                }
+            }
+        }
+    }
+    return std::move(D);
+}
+
+region_distances parallel_region_distance(const size_t k, const npy_array<float>& seeds, const npy_array<float>& lab_image, const npy_array<float>& area, const float xi, const size_t region_size)
+{
+    region_distances rd;
+
+    const float* seed_index = &seeds[{k, 0}];
+
+    const size_t y = size_t(seed_index[0]);
+    const size_t x = size_t(seed_index[1]);
+
+    const float lambda = compute_lambda(seed_index, area, xi, region_size);
+    const size_t offset = lambda * region_size;
+
+    const size_t x_min = size_t(std::max(0L, long(x) - long(offset)));
+    const size_t x_max = std::min(area.shape()[1] - 1UL, x + offset);
+    const size_t y_min = size_t(std::max(0L, long(y) - long(offset)));
+    const size_t y_max = std::min(area.shape()[0] - 1UL, y + offset);
+
+    const size_t region_width = x_max - x_min + 1;
+
+    rd.k = k;
+    rd.distances.reset(new npy_array<float>(std::move(shortest_path(x_min, x_max, y_min, y_max, x, y, lab_image))));
+    rd.coords.reserve(rd.distances->size());
+
+    for(auto i = 0UL; i != rd.distances->size(); i++)
+    {
+        auto xy_relative = ind2sub(i, region_width);
+        rd.coords.push_back(std::make_pair(xy_relative.first + y_min, xy_relative.second + x_min));
+    }
+
+    return std::move(rd);
+}
+
+std::vector<std::pair<size_t, size_t>> find_orphanes(const npy_array<int>& labels)
+{
+    std::vector<std::pair<size_t, size_t>> orphanes{};
+
+    for(auto i = 0UL; i != labels.size(); i++)
+    {
+        if(labels[i] == -1)
+        {
+            orphanes.push_back(ind2sub(i, labels.shape()[1]));
+        }
+    }
+
+    return std::move(orphanes);
+}  
+
 int main(int argc, char* argv[])
 {
     timer profiler{};
 
-    const int region_size = 25;
-    const int max_iterations = 1;
+    const size_t region_size = 25;
+    const size_t max_iterations = 1;
 
     profiler.start();
-    npy_array<uint8_t> rgb_image{"./4k.npy"};
-    profiler.stop_and_print();
+    npy_array<uint8_t> rgb_image{"./image.npy"};
+    profiler.stop_and_print("RGB Loading");
 
     profiler.start();
     npy_array<float> lab_image = rgb_to_lab(rgb_image);
-    profiler.stop_and_print();
+    profiler.stop_and_print("RGB 2 LAB");
 
     profiler.start();
     npy_array<float> area = compute_area(lab_image);
-    profiler.stop_and_print();
+    profiler.stop_and_print("Area");
 
     profiler.start();
     npy_array<float> cumulative_area{area.shape()};
     std::partial_sum(area.cbegin(), area.cend(), cumulative_area.begin(), std::plus<float>());
-    profiler.stop_and_print();
+    profiler.stop_and_print("Cumulative Area");
 
-    const int K = (rgb_image.shape()[0] * rgb_image.shape()[1]) / (region_size * region_size);
+    const size_t K = (rgb_image.shape()[0] * rgb_image.shape()[1]) / (region_size * region_size);
     const float xi = cumulative_area[cumulative_area.size() - 1] * 4.0f / float(K);
 
     profiler.start();
-    volatile npy_array<float> seeds = compute_seeds(lab_image, K, cumulative_area);
-    profiler.stop_and_print();
+    npy_array<float> seeds = compute_seeds(lab_image, K, cumulative_area);
+    profiler.stop_and_print("Seeds");
+
+    npy_array<int> labels{{rgb_image.shape()[0], rgb_image.shape()[1]}};
+    npy_array<float> global_distances{labels.shape()};
+
+    for(auto iteration = 0UL; iteration != max_iterations; iteration++)
+    {
+        profiler.start();
+
+        timer inner_timer{};
+
+        inner_timer.start();
+        std::fill(global_distances.begin(), global_distances.end(), std::numeric_limits<float>::max());
+        std::fill(labels.begin(), labels.end(), -1);
+        inner_timer.stop_and_print("Distances and Labels Reset");
+
+        inner_timer.start();
+
+        std::vector<std::future<region_distances>> futures;
+        futures.reserve(K);
+
+        for(auto k = 0UL; k != K; k++)
+        {
+            futures.push_back(std::async(
+                policy,
+                parallel_region_distance,
+                k, std::ref(seeds), std::ref(lab_image), std::ref(area), xi, region_size
+            ));
+        }
+
+        for(auto& future : futures)
+        {
+            region_distances rd = std::move(future.get());
+
+            for(auto i = 0UL; i != rd.coords.size(); i++)
+            {
+                auto& coord = rd.coords[i];
+                float& distance = rd.distances->operator[](i);
+
+                if(distance < global_distances[{coord.first, coord.second}])
+                {
+                    global_distances[{coord.first, coord.second}] = distance;
+                    labels[{coord.first, coord.second}] = rd.k;
+                }
+            }
+        }
+
+        inner_timer.stop_and_print("Region Distances");
+
+        inner_timer.start();
+
+        auto orphanes = std::move(find_orphanes(labels));
+
+        inner_timer.stop_and_print("Orphanes");
+
+        profiler.stop_and_print("Iteration " + std::to_string(iteration));
+    }
 
     return EXIT_SUCCESS;
 }
