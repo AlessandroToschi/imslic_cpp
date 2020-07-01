@@ -4,6 +4,7 @@
 #include <valarray>
 #include <chrono>
 
+#include "shortest_path.h"
 #include "npy_array/npy_array.h"
 
 std::launch policy = std::launch::deferred;
@@ -321,7 +322,7 @@ float compute_lambda(const float* seed_index, const npy_array<float>& area, cons
     return std::sqrt(xi / sub_area);
 }
 
-npy_array<float> shortest_path(const int x_min, const int x_max, const int y_min, const int y_max, const int seed_x, const int seed_y, const npy_array<float>& lab_image)
+npy_array<float> shortest_pathh(const int x_min, const int x_max, const int y_min, const int y_max, const int seed_x, const int seed_y, npy_array<float>& lab_image)
 {
     const float float_max = std::numeric_limits<float>::max();
     const int region_width = x_max - x_min + 1;
@@ -381,7 +382,7 @@ npy_array<float> shortest_path(const int x_min, const int x_max, const int y_min
     return std::move(D);
 }
 
-region_distances parallel_region_distance(const size_t k, const npy_array<float>& seeds, const npy_array<float>& lab_image, const npy_array<float>& area, const float xi, const size_t region_size)
+region_distances parallel_region_distance(const size_t k, const npy_array<float>& seeds, const npy_array<float>& lab_image, const npy_array<float>& area, const float xi, const size_t region_size, imslic::shortest_path& sp)
 {
     region_distances rd;
 
@@ -401,7 +402,7 @@ region_distances parallel_region_distance(const size_t k, const npy_array<float>
     const size_t region_width = x_max - x_min + 1;
 
     rd.k = k;
-    rd.distances.reset(new npy_array<float>(std::move(shortest_path(x_min, x_max, y_min, y_max, x, y, lab_image))));
+    rd.distances.reset(new npy_array<float>{sp(x, y, x_min, x_max, y_min, y_max)});
     rd.coords.reserve(rd.distances->size());
 
     for(auto i = 0UL; i != rd.distances->size(); i++)
@@ -444,6 +445,11 @@ int main(int argc, char* argv[])
     profiler.stop_and_print("RGB 2 LAB");
 
     profiler.start();
+    imslic::shortest_path sp{&lab_image};
+    sp(0UL, 0UL, 0UL, 10UL, 0UL, 10UL);
+    profiler.stop_and_print("Sh");
+
+    profiler.start();
     npy_array<float> area = compute_area(lab_image);
     profiler.stop_and_print("Area");
 
@@ -483,7 +489,7 @@ int main(int argc, char* argv[])
             futures.push_back(std::async(
                 policy,
                 parallel_region_distance,
-                k, std::ref(seeds), std::ref(lab_image), std::ref(area), xi, region_size
+                k, std::ref(seeds), std::ref(lab_image), std::ref(area), xi, region_size, std::ref(sp)
             ));
         }
 
