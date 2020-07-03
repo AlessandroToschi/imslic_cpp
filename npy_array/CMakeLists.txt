@@ -13,5 +13,8 @@ add_library(npy_array_static STATIC "${NPY_ARRAY_SOURCES}")
 target_link_libraries(npy_array "${BOOST_LIB_NAMES}")
 target_link_libraries(npy_array_static "${BOOST_LIB_NAMES}")
 
+target_link_libraries(npy_array Boost::regex)
+target_link_libraries(npy_array_static Boost::regex)
+
 target_include_directories(npy_array PUBLIC "${Boost_INCLUDE_DIRS}")
 target_include_directories(npy_array_static PUBLIC "${Boost_INCLUDE_DIRS}")

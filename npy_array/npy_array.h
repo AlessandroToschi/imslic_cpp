@@ -94,6 +94,6 @@ private:
     void check_for_strides();
 };
 
-#include "npy_array/npy_array.ipp"
+#include "npy_array.ipp"
 
 #endif /* D95166DE_89E6_49FF_A7EA_BA27F7948D32 */
